@@ -26,10 +26,15 @@ thead th { position: sticky; top: 0; z-index: 10; }
 @media (max-width: 768px) {
   table { display: none; }
   .mobile-view { display: grid; grid-template-columns: 1fr; gap: 1rem; width: 100%; }
-  .mobile-day { background: white; border-radius: 1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.1); padding: 1rem; text-align: center; }
-  .mobile-day h2 { font-weight: 700; color: #2563eb; font-size: 1.25rem; margin-bottom: 0.75rem; }
+  .mobile-day { background: white; border-radius: 1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.1); padding: 1rem; text-align: center; transition: all 0.3s ease; }
+  .mobile-day h2 { font-weight: 700; color: #2563eb; font-size: 1.25rem; margin-bottom: 0.5rem; }
   .time-slot { background: #e0f2fe; border: 1px solid #3b82f6; border-radius: 0.75rem; padding: 0.75rem; margin-bottom: 0.5rem; font-weight: 600; text-align: center; white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
   .time-label { display: block; font-size: 0.9rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.3rem; }
+  .day-button { width: 100%; background: #2563eb; color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 700; transition: all 0.3s; }
+  .day-button:hover { background: #1d4ed8; }
+  .day-content { display: none; margin-top: 0.75rem; }
+  .day-content.open { display: block; animation: fadeIn 0.3s ease-in-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 }
 </style>
 </head>
@@ -78,6 +83,7 @@ thead th { position: sticky; top: 0; z-index: 10; }
 
 <script>
 /* ---------------- Firebase Setup ---------------- */
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyATtftn1Y0WT0EezeYAwYZ_msIiObHul3A",
   authDomain: "routine-087.firebaseapp.com",
@@ -126,7 +132,6 @@ function createTable(data){
       } else if(!cellData){
         td.innerText = '';
       } else {
-        // skip covered cells
         c++;
         continue;
       }
@@ -164,7 +169,6 @@ function handleSpan(cell){
   if(colIndex===-1) return;
   cell.colSpan = span;
   cell.innerText = txt.replace(/colspan=\d+/i,'').trim();
-  // Remove next (span-1) visible siblings
   for(let i=0;i<span-1;i++){
     const next=cell.nextElementSibling;
     if(!next) break;
@@ -199,9 +203,16 @@ function saveToFirebase(){
 function renderMobile(data){
   mobileView.innerHTML='';
   days.forEach((day,r)=>{
-    const card=document.createElement('div');
-    card.className='mobile-day';
-    card.innerHTML=`<h2>${day}</h2>`;
+    const dayCard=document.createElement('div');
+    dayCard.className='mobile-day';
+    
+    const button=document.createElement('button');
+    button.className='day-button';
+    button.textContent=day;
+    
+    const content=document.createElement('div');
+    content.className='day-content';
+    
     const row=data[r]||[];
     let c=0;
     while(c<times.length){
@@ -213,10 +224,17 @@ function renderMobile(data){
       const block=document.createElement('div');
       block.className='time-slot';
       block.innerHTML = `<span class="time-label">${timeStart} - ${timeEnd}</span>${(cell.text||'').replace(/\n/g,'<br>')}`;
-      card.appendChild(block);
+      content.appendChild(block);
       c+=colspan;
     }
-    mobileView.appendChild(card);
+
+    button.addEventListener('click', ()=>{
+      content.classList.toggle('open');
+    });
+
+    dayCard.appendChild(button);
+    dayCard.appendChild(content);
+    mobileView.appendChild(dayCard);
   });
 }
 
