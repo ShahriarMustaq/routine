@@ -78,7 +78,6 @@ thead th { position: sticky; top: 0; z-index: 10; }
 
 <script>
 /* ---------------- Firebase Setup ---------------- */
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyATtftn1Y0WT0EezeYAwYZ_msIiObHul3A",
   authDomain: "routine-087.firebaseapp.com",
@@ -111,18 +110,32 @@ function createTable(data){
     dayCell.textContent=day;
     dayCell.classList.add('font-semibold','bg-gray-50');
     tr.appendChild(dayCell);
-    times.forEach((_,c)=>{
-      const td=document.createElement('td');
-      td.dataset.col=c;
+
+    const rowData = data && data[r] ? data[r] : [];
+    let c = 0;
+    while (c < times.length) {
+      const cellData = rowData[c];
+      const td = document.createElement('td');
       td.style.fontWeight='600';
       td.contentEditable=isAdmin;
-      if(data && data[r] && data[r][c] && !data[r][c].covered){
-        td.innerText=data[r][c].text||'';
-        if(data[r][c].colspan>1) td.colSpan=data[r][c].colspan;
+      if(cellData && !cellData.covered){
+        td.innerText = cellData.text || '';
+        if(cellData.colspan && cellData.colspan > 1){
+          td.colSpan = cellData.colspan;
+        }
+      } else if(!cellData){
+        td.innerText = '';
+      } else {
+        // skip covered cells
+        c++;
+        continue;
       }
       attachHandlers(td);
       tr.appendChild(td);
-    });
+      const span = (cellData && cellData.colspan) ? cellData.colspan : 1;
+      c += span;
+    }
+
     tbody.appendChild(tr);
   });
   renderMobile(data || []);
@@ -151,7 +164,12 @@ function handleSpan(cell){
   if(colIndex===-1) return;
   cell.colSpan = span;
   cell.innerText = txt.replace(/colspan=\d+/i,'').trim();
-  for(let i=0;i<span-1;i++){ const next=cell.nextElementSibling; if(!next) break; next.remove(); }
+  // Remove next (span-1) visible siblings
+  for(let i=0;i<span-1;i++){
+    const next=cell.nextElementSibling;
+    if(!next) break;
+    next.remove();
+  }
 }
 
 function getRoutineData(){
@@ -249,4 +267,3 @@ document.getElementById('exportPDF').addEventListener('click', async ()=>{
 </script>
 </body>
 </html>
-
