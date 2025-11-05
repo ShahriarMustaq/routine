@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Class Routine</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+body { -webkit-font-smoothing: antialiased; }
+table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+th, td { border: 1px solid #d1d5db; padding: 0.5rem; text-align: center; vertical-align: middle; word-wrap: break-word; }
+td[contenteditable="true"]:focus { outline: 2px solid #3b82f6; background: #e0f2fe; }
+thead th { position: sticky; top: 0; z-index: 10; }
+.container { max-width: 1100px; width: 100%; }
+
+/* Mobile card view */
+@media (max-width: 768px) {
+  table { display: none; }
+  .mobile-cards { display: block; }
+  .mobile-card { background: white; border: 1px solid #d1d5db; border-radius: 1rem; margin-bottom: 1rem; padding: 0.5rem; }
+  .mobile-card-header { font-weight: 600; cursor: pointer; padding: 0.5rem; background: #3b82f6; color: white; border-radius: 0.5rem; }
+  .mobile-card-content { display: none; margin-top: 0.5rem; }
+  .mobile-card-content.active { display: block; }
+  .time-slot { display: flex; justify-content: space-between; padding: 0.25rem 0.5rem; border-bottom: 1px solid #e5e7eb; }
+  .time-slot:last-child { border-bottom: none; }
+  .time-slot span { flex: 1; text-align: left; }
+  .time-slot input { flex: 2; border: 1px solid #d1d5db; border-radius: 0.25rem; padding: 0.15rem 0.25rem; width: 100%; }
+}
+.mobile-cards { display: none; }
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+<div class="container">
+<div class="flex items-center justify-between mb-4">
+<h1 class="text-3xl font-bold text-blue-700">Class Routine</h1>
+<div class="flex items-center gap-3">
+<span id="adminStatus" class="text-sm text-gray-600 hidden">🟢 Admin Mode Active</span>
+<button id="loginBtn" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Admin Login</button>
+</div>
+</div>
+
+<div class="flex gap-3 mb-4">
+<button id="exportPDF" class="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700">Export to PDF</button>
+<button id="resetRoutine" class="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 hidden">Reset Routine</button>
+<button id="clearStorage" class="px-4 py-2 rounded bg-gray-600 text-white hover:bg-gray-700 hidden">Clear Saved Data</button>
+</div>
+
+<!-- Desktop Table -->
+<div class="overflow-auto bg-white rounded-2xl shadow">
+<table id="routineTable" class="min-w-full">
+<thead class="bg-blue-600 text-white">
+<tr>
+<th class="w-36">Day</th>
+<th>8:00-8:50</th>
+<th>8:50-9:40</th>
+<th>9:40-10:30</th>
+<th>10:50-11:40</th>
+<th>11:40-12:30</th>
+<th>12:30-1:20</th>
+<th>2:30-3:20</th>
+<th>3:20-4:10</th>
+<th>4:10-5:00</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<!-- Mobile Cards -->
+<div id="mobileCards" class="mobile-cards"></div>
+<p class="mt-3 text-sm text-gray-600">Viewable by everyone. Only admin can edit. Type <code>colspan=2</code> on desktop to merge time slots. Shift+Enter inserts new line.</p>
+</div>
+<script>
+const ADMIN_PASSWORD = "admin123";
+let isAdmin = false;
+const days = ["Saturday","Sunday","Monday","Tuesday","Wednesday"];
+const times = ["8:00-8:50","8:50-9:40","9:40-10:30","10:50-11:40","11:40-12:30","12:30-1:20","2:30-3:20","3:20-4:10","4:10-5:00"];
+const tbody = document.querySelector('#routineTable tbody');
+const mobileCards = document.getElementById('mobileCards');
+const STORAGE_KEY = 'classRoutine_v2';
+
+const loginBtn = document.getElementById('loginBtn');
+const adminStatus = document.getElementById('adminStatus');
+const resetBtn = document.getElementById('resetRoutine');
+const clearBtn = document.getElementById('clearStorage');
+
+function createTable() {
+  tbody.innerHTML = '';
+  days.forEach(day => {
+    const tr = document.createElement('tr');
+    const dayCell = document.createElement('td'); dayCell.textContent = day; dayCell.classList.add('font-semibold','bg-gray-50'); tr.appendChild(dayCell);
+    times.forEach((_, c) => {
+      const td = document.createElement('td'); td.dataset.col=c; td.contentEditable=isAdmin; attachCellHandlers(td); tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+function attachCellHandlers(td){
+  td.addEventListener('keydown', e => {
+    if(!isAdmin) return e.preventDefault();
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); td.blur(); }
+  });
+  td.addEventListener('blur', ()=>{ if(!isAdmin) return; handleSpanFromText(td); saveRoutine(); });
+}
+
+function handleSpanFromText(cell){
+  const txt = cell.innerText.trim();
+  const m = txt.match(/colspan=(\d+)/i);
+  if(!m) return;
+  const span = parseInt(m[1]);
+  if(!span||span<2){ cell.innerText = txt.replace(/colspan=\d+/i,'').trim(); return; }
+  const row = cell.parentElement;
+  let colIndex = Array.from(row.children).slice(1).indexOf(cell);
+  if(colIndex===-1) return;
+  cell.colSpan = span; cell.innerText = txt.replace(/colspan=\d+/i,'').trim();
+  for(let i=0;i<span-1;i++){ const next=cell.nextElementSibling; if(!next) break; next.remove(); }
+}
+
+function saveRoutine(){
+  const rows=[];
+  document.querySelectorAll('#routineTable tbody tr').forEach(row=>{
+    const rowData=new Array(times.length).fill(null);
+    const visible=Array.from(row.children).slice(1);
+    let colPtr=0;
+    visible.forEach(cell=>{
+      while(colPtr<times.length&&rowData[colPtr]!==null) colPtr++;
+      if(colPtr>=times.length) return;
+      const colspan=cell.colSpan||1;
+      rowData[colPtr]={text:cell.innerText,colspan};
+      for(let k=1;k<colspan;k++) rowData[colPtr+k]={covered:true};
+      colPtr+=colspan;
+    });
+    rows.push(rowData);
+  });
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(rows));
+  renderMobileCards();
+}
+
+function loadRoutine(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return false;
+  try{
+    const rows = JSON.parse(raw);
+    tbody.innerHTML='';
+    rows.forEach((rowData,r)=>{
+      const tr=document.createElement('tr');
+      const dayCell=document.createElement('td'); dayCell.textContent=days[r]||('Day '+(r+1)); dayCell.classList.add('font-semibold','bg-gray-50'); tr.appendChild(dayCell);
+      for(let c=0;c<times.length;c++){
+        const cellInfo=rowData[c];
+        if(!cellInfo){ const td=document.createElement('td'); td.contentEditable=isAdmin; td.dataset.col=c; attachCellHandlers(td); tr.appendChild(td); }
+        else if(cellInfo.covered) continue;
+        else{ const td=document.createElement('td'); td.contentEditable=isAdmin; td.innerText=cellInfo.text||''; if(cellInfo.colspan&&cellInfo.colspan>1) td.colSpan=cellInfo.colspan; attachCellHandlers(td); tr.appendChild(td); }
+      }
+      tbody.appendChild(tr);
+    });
+    renderMobileCards();
+    return true;
+  }catch{return false;}
+}
+
+function renderMobileCards(){
+  mobileCards.innerHTML='';
+  document.querySelectorAll('#routineTable tbody tr').forEach((row,r)=>{
+    const card=document.createElement('div'); card.className='mobile-card';
+    const header=document.createElement('div'); header.className='mobile-card-header'; header.textContent=days[r]; card.appendChild(header);
+    const content=document.createElement('div'); content.className='mobile-card-content';
+    let c=0;
+    Array.from(row.children).slice(1).forEach(td=>{
+      const colspan = td.colSpan || 1;
+      const label = times[c] + (colspan>1 ? '-' + times[c+colspan-1].split('-')[1] : '');
+      const slot=document.createElement('div'); slot.className='time-slot';
+      const tspan=document.createElement('span'); tspan.textContent=label;
+      const input=document.createElement('input'); input.value=td.innerText; input.disabled=!isAdmin; input.size=colspan*5;
+      input.addEventListener('input', ()=>{ td.innerText=input.value; saveRoutine(); });
+      slot.appendChild(tspan); slot.appendChild(input); content.appendChild(slot);
+      c+=colspan;
+    });
+    card.appendChild(content); mobileCards.appendChild(card);
+    header.addEventListener('click',()=>content.classList.toggle('active'));
+  });
+}
+
+// Event listeners for buttons
+loginBtn.addEventListener('click',()=>{
+  if(isAdmin){ isAdmin=false; adminStatus.classList.add('hidden'); loginBtn.textContent='Admin Login'; resetBtn.classList.add('hidden'); clearBtn.classList.add('hidden'); setEditable(false); renderMobileCards(); return; }
+  const pwd=prompt('Enter admin password:');
+  if(pwd===ADMIN_PASSWORD){ isAdmin=true; adminStatus.classList.remove('hidden'); loginBtn.textContent='Logout'; resetBtn.classList.remove('hidden'); clearBtn.classList.remove('hidden'); setEditable(true); renderMobileCards(); alert('Admin mode activated.'); }
+  else alert('Incorrect password.');
+});
+
+function setEditable(state){
+  document.querySelectorAll('#routineTable td').forEach(td=>{ if(td.cellIndex===0) return; td.contentEditable=state; });
+  document.querySelectorAll('.mobile-card input').forEach(inp=>inp.disabled=!state);
+}
+
+document.getElementById('exportPDF').addEventListener('click',async()=>{
+  const el=document.querySelector('#routineTable');
+  const canvas=await html2canvas(el,{scale:2});
+  const img=canvas.toDataURL('image/png');
+  const pdf=new jspdf.jsPDF('l','pt','a4');
+  const pageWidth=pdf.internal.pageSize.getWidth();
+  const imgWidth=pageWidth-40;
+  const imgHeight=(canvas.height*imgWidth)/canvas.width;
+  pdf.addImage(img,'PNG',20,20,imgWidth,imgHeight);
+  pdf.save('Class_Routine.pdf');
+});
+
+resetBtn.addEventListener('click',()=>{ if(!isAdmin) return alert('Admin only.'); if(!confirm('Reset routine to empty table?')) return; localStorage.removeItem(STORAGE_KEY); createTable(); renderMobileCards(); });
+clearBtn.addEventListener('click',()=>{ if(!isAdmin) return alert('Admin only.'); if(!confirm('Clear saved data?')) return; localStorage.removeItem(STORAGE_KEY); alert('Saved data cleared.'); });
+
+const loaded = loadRoutine(); if(!loaded) createTable();
+window.addEventListener('beforeunload', saveRoutine);
+</script>
+</body>
+</html>
